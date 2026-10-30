@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import type Anthropic from "@anthropic-ai/sdk";
-import { askJson, buildContext } from "@/lib/ai";
+import { askJson, buildContext, type Input } from "@/lib/ai";
 import { db, latestResume } from "@/lib/db";
 
 export const maxDuration = 120;
@@ -34,17 +33,14 @@ export async function POST(req: Request) {
     const file = form.get("file") as File | null;
     const pasted = (form.get("text") as string | null)?.trim();
 
-    let content: string | Anthropic.ContentBlockParam[];
+    let content: Input;
     const instruction = `${buildContext(null)}\n\nAnalyse the resume below.`;
     if (file && file.size > 0) {
       if (file.size > 8 * 1024 * 1024) return NextResponse.json({ error: "File over 8 MB" }, { status: 400 });
       const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
       if (isPdf) {
         const data = Buffer.from(await file.arrayBuffer()).toString("base64");
-        content = [
-          { type: "document", source: { type: "base64", media_type: "application/pdf", data } },
-          { type: "text", text: instruction },
-        ];
+        content = { text: instruction, pdf: { base64: data, filename: file.name || "resume.pdf" } };
       } else {
         content = `${instruction}\n\nRESUME:\n${await file.text()}`;
       }
