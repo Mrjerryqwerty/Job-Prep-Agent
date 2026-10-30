@@ -48,7 +48,7 @@ export default function ResumePage() {
         <input type="file" name="file" accept=".pdf,.txt,.md" className="text-sm" />
         <textarea rows={4} placeholder="...or paste resume text" value={text} onChange={(e) => setText(e.target.value)} />
         {err && <p style={{ color: "var(--warn)" }}>{err}</p>}
-        <button className="btn" disabled={busy}>{busy ? "Analysing against the JD… (up to a minute)" : "Analyse resume"}</button>
+        <button className="btn" disabled={busy}>{busy ? "Analysing against the JD… (about 20-30 seconds)" : "Analyse resume"}</button>
       </form>
 
       {profile && (
