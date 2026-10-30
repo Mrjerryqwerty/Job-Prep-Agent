@@ -72,7 +72,7 @@ export default async function CandidateReport({ params }: { params: Promise<{ id
 
       {ai && (
         <div className="card space-y-3 text-sm">
-          <p className="font-semibold">AI assessment <span className="muted text-xs font-normal">{new Date(ai.generated_at).toLocaleString()}</span></p>
+          <p className="font-semibold">Assessment <span className="muted text-xs font-normal">{new Date(ai.generated_at).toLocaleString()}</span></p>
           <p>{ai.summary}</p>
           <p><b>Recommendation:</b> {ai.recommendation}</p>
           <List title="Strengths" items={ai.strengths} tone="var(--good)" />

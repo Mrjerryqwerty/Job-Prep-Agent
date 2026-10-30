@@ -22,7 +22,7 @@ export default function Actions({ candidateId }: { candidateId: string }) {
 
   return (
     <div className="no-print flex flex-wrap items-center gap-2">
-      <button className="btn" onClick={generate} disabled={busy}>{busy ? "Writing assessment… (up to a minute)" : "Generate AI assessment"}</button>
+      <button className="btn" onClick={generate} disabled={busy}>{busy ? "Building…" : "Generate assessment"}</button>
       <button className="btn-ghost" onClick={() => window.print()}>Print / save as PDF</button>
       {err && <span className="text-sm" style={{ color: "var(--warn)" }}>{err}</span>}
     </div>

@@ -1,18 +1,10 @@
 import { NextResponse } from "next/server";
-import { askJson, buildContext } from "@/lib/ai";
+import { ASSIGNMENTS } from "@/lib/bank-assignments";
 import { CURRICULUM } from "@/lib/content";
-import { db, referenceResume } from "@/lib/db";
+import { db } from "@/lib/db";
 import { candidateId, fail } from "@/lib/session";
 
-export const maxDuration = 120;
-
-const SYSTEM = `You write interview-prep assignments for a candidate preparing for a Business Process Analyst role (PeopleSoft OTC/P2P/ESA/T&E) at Dassault Systèmes Pune.
-Merge three things: (1) Dassault context, (2) the JD, (3) the candidate's actual resume. Reference the candidate's real projects/skills by name where it helps, and target their gaps versus the JD.
-For SQL assignments give a small simplified schema (say it is illustrative, not the exact PeopleSoft record layout), sample rows if useful, and 3 numbered tasks.
-For scenario/written assignments give a realistic situation, what to produce, and 3-5 grading criteria. Keep each prompt under 350 words, plain text with line breaks, no markdown headers.
-Return JSON: {"assignments":[{"title":string,"prompt":string},{"title":string,"prompt":string}]} in the same order as the seeds.`;
-
-// Returns (and lazily generates + stores) the two assignments for a day, with latest submissions.
+// Returns the two assignments for a day (created for this candidate on first open), with their submissions.
 export async function POST(req: Request) {
   try {
     const cid = await candidateId();
@@ -23,21 +15,8 @@ export async function POST(req: Request) {
     const sb = db();
     let { data: rows } = await sb.from("assignments").select("*").eq("candidate_id", cid).eq("day", d.n).order("slot");
     if (!rows || rows.length < 2) {
-      const resume = await referenceResume();
-      if (!resume) return NextResponse.json({ error: "The reference resume is missing from the database" }, { status: 500 });
-      const seeds = d.slots.map((s, i) => `${i + 1}. [${s.type}] ${s.title}: ${s.seed}`).join("\n");
-      const out = await askJson<{ assignments: { title: string; prompt: string }[] }>(
-        SYSTEM,
-        `${buildContext(resume.profile)}\n\nDay ${d.n}: ${d.theme}\nSeeds:\n${seeds}`,
-        3500,
-      );
-      const ins = d.slots.map((s, i) => ({
-        candidate_id: cid,
-        day: d.n,
-        slot: i + 1,
-        type: s.type,
-        title: out.assignments[i]?.title ?? s.title,
-        prompt: out.assignments[i]?.prompt ?? s.seed,
+      const ins = ASSIGNMENTS.filter((a) => a.day === d.n).map((a) => ({
+        candidate_id: cid, day: a.day, slot: a.slot, type: a.type, title: a.title, prompt: a.prompt,
       }));
       const { error } = await sb
         .from("assignments")

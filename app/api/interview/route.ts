@@ -1,17 +1,32 @@
 import { NextResponse } from "next/server";
-import { askJson, buildContext } from "@/lib/ai";
+import { questionById, questionsFor, type Q } from "@/lib/bank-interview";
 import { ROUNDS, type RoundNo } from "@/lib/content";
-import { db, referenceResume } from "@/lib/db";
+import { db } from "@/lib/db";
+import { bandVerdict, evaluate } from "@/lib/rubric";
 import { candidateId, fail } from "@/lib/session";
 
-export const maxDuration = 120;
+const GREETING = "Hello, thanks for joining. Let's begin. ";
 
-function system(round: RoundNo) {
-  const r = ROUNDS[round];
-  return `You are ${r.persona}, conducting ${r.name} for a Business Process Analyst role (PeopleSoft OTC/P2P/ESA/T&E) at Dassault Systèmes Pune. This is a SPOKEN interview: keep every question to 1-3 sentences, natural, no lists, no markdown.
-Each question must merge three sources: Dassault context, the JD, and the candidate's real resume. Round focus: ${r.focus}
-Mix: roughly 40% JD-driven, 40% probing specific resume items by name (claims, projects, gaps), 20% company/behavioural. Never repeat a question. Adapt follow-ups to the previous answer.`;
+function shuffle<T>(a: T[]) {
+  const x = [...a];
+  for (let i = x.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [x[i], x[j]] = [x[j], x[i]];
+  }
+  return x;
 }
+
+// Core questions are always asked; the rest are sampled so repeat attempts differ. Bank order is kept.
+function pick(round: RoundNo): Q[] {
+  const all = questionsFor(round);
+  const n = Math.min(ROUNDS[round].questions, all.length);
+  const core = all.filter((q) => q.core);
+  const extra = shuffle(all.filter((q) => !q.core)).slice(0, Math.max(0, n - core.length));
+  const chosen = new Set([...core, ...extra].map((q) => q.id));
+  return all.filter((q) => chosen.has(q.id));
+}
+
+const mean = (a: number[]) => a.reduce((s, x) => s + x, 0) / (a.length || 1);
 
 export async function POST(req: Request) {
   try {
@@ -22,25 +37,23 @@ export async function POST(req: Request) {
     if (body.action === "start") {
       const round = Number(body.round) as RoundNo;
       if (!ROUNDS[round]) return NextResponse.json({ error: "Bad round" }, { status: 400 });
-      const resume = await referenceResume();
-      if (!resume) return NextResponse.json({ error: "The reference resume is missing from the database" }, { status: 500 });
-      const out = await askJson<{ question: string }>(
-        system(round),
-        `${buildContext(resume.profile)}\n\nGreet the candidate briefly in one sentence and ask question 1 of ${ROUNDS[round].questions}. Return {"question": "..."} (greeting included in the same string).`,
-        600,
-      );
+      const qs = pick(round);
       const { data: iv, error } = await sb
         .from("interviews")
-        .insert({ candidate_id: cid, round, total: ROUNDS[round].questions })
+        .insert({ candidate_id: cid, round, total: qs.length })
         .select()
         .single();
       if (error) throw error;
-      await sb.from("interview_turns").insert({ interview_id: iv.id, idx: 1, question: out.question });
-      return NextResponse.json({ interviewId: iv.id, idx: 1, total: iv.total, question: out.question });
+      const { error: te } = await sb
+        .from("interview_turns")
+        .insert(qs.map((q, i) => ({ interview_id: iv.id, idx: i + 1, qid: q.id, question: q.q })));
+      if (te) throw te;
+      return NextResponse.json({ interviewId: iv.id, idx: 1, total: qs.length, question: GREETING + qs[0].q });
     }
 
     if (body.action === "answer") {
-      const { interviewId, answer } = body;
+      const { interviewId } = body;
+      const answer = String(body.answer ?? "").trim();
       const { data: iv } = await sb
         .from("interviews")
         .select("*")
@@ -48,56 +61,54 @@ export async function POST(req: Request) {
         .eq("candidate_id", cid)
         .maybeSingle();
       if (!iv) return NextResponse.json({ error: "Interview not found" }, { status: 404 });
-      const { data: turns } = await sb
-        .from("interview_turns")
-        .select("*")
-        .eq("interview_id", interviewId)
-        .order("idx");
-      const cur = turns![turns!.length - 1];
-      const isLast = cur.idx >= iv.total;
-      const resume = await referenceResume();
+      const { data: turns } = await sb.from("interview_turns").select("*").eq("interview_id", interviewId).order("idx");
+      const cur = (turns ?? []).find((t) => t.answer === null);
+      if (!cur) return NextResponse.json({ error: "This interview is already finished" }, { status: 409 });
+      const q = questionById(cur.qid);
+      if (!q) return NextResponse.json({ error: "Question not found in the bank" }, { status: 500 });
 
-      const history = turns!
-        .slice(0, -1)
-        .map((t) => `Q${t.idx}: ${t.question}\nA: ${t.answer ?? "(skipped)"}\n(score ${t.score ?? "-"})`)
-        .join("\n\n");
+      const ev = evaluate(answer, q.points, q.minWords ?? 45);
+      const feedbackRow = {
+        feedback: ev.feedback,
+        strengths: ev.strengths,
+        improvements: ev.improvements,
+        sample_answer: q.model,
+        covered: ev.covered,
+        missed: ev.missed,
+      };
+      await sb.from("interview_turns").update({ answer, score: ev.score, feedback: feedbackRow }).eq("id", cur.id);
 
-      const out = await askJson<{
-        score: number;
-        feedback: string;
-        strengths: string[];
-        improvements: string[];
-        sample_answer: string;
-        next_question?: string;
-        summary?: { overall_score: number; verdict: string; strengths: string[]; weaknesses: string[]; next_steps: string[] };
-      }>(
-        system(iv.round),
-        `${buildContext(resume?.profile ?? null)}\n\nPrevious turns:\n${history || "(none)"}\n\nCurrent question (Q${cur.idx} of ${iv.total}): ${cur.question}\nCandidate's spoken answer (speech-to-text, may have small recognition errors): ${answer || "(skipped)"}\n\nEvaluate the answer: "score" 1-10, "feedback" = 2-3 spoken sentences addressed to the candidate, "strengths", "improvements" (short lists), "sample_answer" = a concise strong answer in first person.\n${
-          isLast
-            ? 'This was the LAST question: also include "summary" {overall_score (1-10, whole interview), verdict, strengths[], weaknesses[], next_steps[]} using all turns. No next_question.'
-            : `Also include "next_question": question ${cur.idx + 1} of ${iv.total}, 1-3 spoken sentences.`
-        }`,
-        2500,
-      );
-
-      await sb
-        .from("interview_turns")
-        .update({
-          answer,
-          score: out.score,
-          feedback: { feedback: out.feedback, strengths: out.strengths, improvements: out.improvements, sample_answer: out.sample_answer },
-        })
-        .eq("id", cur.id);
-
-      if (isLast || !out.next_question) {
-        await sb
-          .from("interviews")
-          .update({ status: "done", summary: out.summary ?? null, overall_score: out.summary?.overall_score ?? out.score })
-          .eq("id", interviewId);
-        return NextResponse.json({ done: true, evaluation: out, summary: out.summary ?? null });
+      const evaluation = { score: ev.score, feedback: ev.feedback, strengths: ev.strengths, improvements: ev.improvements, sample_answer: q.model };
+      const next = (turns ?? []).find((t) => t.idx > cur.idx);
+      if (next) {
+        return NextResponse.json({ done: false, evaluation, idx: next.idx, total: iv.total, question: next.question });
       }
-      await sb.from("interview_turns").insert({ interview_id: interviewId, idx: cur.idx + 1, question: out.next_question });
-      return NextResponse.json({ done: false, evaluation: out, idx: cur.idx + 1, total: iv.total, question: out.next_question });
+
+      // Last question: summarise the whole interview from the stored scores.
+      const all = (turns ?? []).map((t) => (t.id === cur.id ? { ...t, score: ev.score, feedback: feedbackRow } : t));
+      const overall = Math.max(1, Math.round(mean(all.map((t) => t.score ?? 0))));
+      const byTag = new Map<string, number[]>();
+      for (const t of all) {
+        const tag = questionById(t.qid)?.tag;
+        if (tag) byTag.set(tag, [...(byTag.get(tag) ?? []), t.score ?? 0]);
+      }
+      const tags = [...byTag].map(([tag, s]) => ({ tag, avg: mean(s) }));
+      const worst = [...all].sort((a, b) => (a.score ?? 0) - (b.score ?? 0)).slice(0, 3);
+      const summary = {
+        overall_score: overall,
+        verdict: bandVerdict(overall),
+        strengths: tags.filter((t) => t.avg >= 7).map((t) => `${t.tag}: you covered what a panel expects`),
+        weaknesses: tags.filter((t) => t.avg < 5).map((t) => `${t.tag}: answers were missing key points`),
+        next_steps: worst
+          .filter((t) => (t.score ?? 0) < 8)
+          .map((t) => {
+            const bq = questionById(t.qid);
+            const missed = t.feedback?.missed?.[0];
+            return `Day ${bq?.day} (${bq?.tag}): ${missed ? `work on ${missed}` : "revisit the model answer"}`;
+          }),
+      };
+      await sb.from("interviews").update({ status: "done", summary, overall_score: overall }).eq("id", interviewId);
+      return NextResponse.json({ done: true, evaluation, summary });
     }
 
     return NextResponse.json({ error: "Bad action" }, { status: 400 });
