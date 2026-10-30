@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { askJson, buildContext } from "@/lib/ai";
 import { ROUNDS, type RoundNo } from "@/lib/content";
 import { db, latestResume } from "@/lib/db";
+import { candidateId, fail } from "@/lib/session";
 
 export const maxDuration = 120;
 
@@ -14,13 +15,14 @@ Mix: roughly 40% JD-driven, 40% probing specific resume items by name (claims, p
 
 export async function POST(req: Request) {
   try {
+    const cid = await candidateId();
     const body = await req.json();
     const sb = db();
 
     if (body.action === "start") {
       const round = Number(body.round) as RoundNo;
       if (!ROUNDS[round]) return NextResponse.json({ error: "Bad round" }, { status: 400 });
-      const resume = await latestResume();
+      const resume = await latestResume(cid);
       if (!resume) return NextResponse.json({ error: "no_resume" }, { status: 409 });
       const out = await askJson<{ question: string }>(
         system(round),
@@ -29,7 +31,7 @@ export async function POST(req: Request) {
       );
       const { data: iv, error } = await sb
         .from("interviews")
-        .insert({ round, total: ROUNDS[round].questions })
+        .insert({ candidate_id: cid, round, total: ROUNDS[round].questions })
         .select()
         .single();
       if (error) throw error;
@@ -39,7 +41,12 @@ export async function POST(req: Request) {
 
     if (body.action === "answer") {
       const { interviewId, answer } = body;
-      const { data: iv } = await sb.from("interviews").select("*").eq("id", interviewId).single();
+      const { data: iv } = await sb
+        .from("interviews")
+        .select("*")
+        .eq("id", interviewId)
+        .eq("candidate_id", cid)
+        .maybeSingle();
       if (!iv) return NextResponse.json({ error: "Interview not found" }, { status: 404 });
       const { data: turns } = await sb
         .from("interview_turns")
@@ -48,7 +55,7 @@ export async function POST(req: Request) {
         .order("idx");
       const cur = turns![turns!.length - 1];
       const isLast = cur.idx >= iv.total;
-      const resume = await latestResume();
+      const resume = await latestResume(cid);
 
       const history = turns!
         .slice(0, -1)
@@ -94,7 +101,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ error: "Bad action" }, { status: 400 });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message ?? "Failed" }, { status: 500 });
+  } catch (e) {
+    return fail(e);
   }
 }

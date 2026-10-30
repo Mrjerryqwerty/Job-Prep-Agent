@@ -66,13 +66,21 @@ export async function askText(system: string, input: Input, maxTokens = 2000) {
 export async function askJson<T>(system: string, input: Input, maxTokens = 2000): Promise<T> {
   const sys = `${system}\n\nRespond with ONE valid JSON object only. No markdown fences, no commentary before or after.`;
   let last = "";
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const text = await askText(sys, input, maxTokens);
     const a = text.indexOf("{");
     const b = text.lastIndexOf("}");
-    try {
-      if (a >= 0 && b > a) return JSON.parse(text.slice(a, b + 1)) as T;
-    } catch {}
+    if (a >= 0 && b > a) {
+      const body = text.slice(a, b + 1);
+      try {
+        return JSON.parse(body) as T;
+      } catch {
+        // Free models often put raw line breaks/tabs inside strings, which is invalid JSON.
+        try {
+          return JSON.parse(body.replace(/[\u0000-\u001F]+/g, " ")) as T;
+        } catch {}
+      }
+    }
     last = text.slice(0, 120);
   }
   throw new Error(`Model did not return valid JSON (${last})`);

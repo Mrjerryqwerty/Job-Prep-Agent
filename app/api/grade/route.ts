@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { askJson, buildContext } from "@/lib/ai";
 import { db, latestResume } from "@/lib/db";
+import { candidateId, fail } from "@/lib/session";
 
 export const maxDuration = 120;
 
@@ -10,14 +11,20 @@ Return JSON: {"score": 1-10 integer, "verdict": one sentence, "strengths": strin
 
 export async function POST(req: Request) {
   try {
+    const cid = await candidateId();
     const { assignmentId, answer } = await req.json();
     if (!answer || String(answer).trim().length < 20) {
       return NextResponse.json({ error: "Write a fuller answer first" }, { status: 400 });
     }
     const sb = db();
-    const { data: a, error: ae } = await sb.from("assignments").select("*").eq("id", assignmentId).single();
-    if (ae || !a) return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
-    const resume = await latestResume();
+    const { data: a } = await sb
+      .from("assignments")
+      .select("*")
+      .eq("id", assignmentId)
+      .eq("candidate_id", cid)
+      .maybeSingle();
+    if (!a) return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
+    const resume = await latestResume(cid);
     const fb = await askJson<{ score: number }>(
       SYSTEM,
       `${buildContext(resume?.profile ?? null)}\n\nASSIGNMENT: ${a.title}\n${a.prompt}\n\nCANDIDATE ANSWER:\n${answer}`,
@@ -30,7 +37,7 @@ export async function POST(req: Request) {
       .single();
     if (error) throw error;
     return NextResponse.json({ submission: data });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message ?? "Failed" }, { status: 500 });
+  } catch (e) {
+    return fail(e);
   }
 }

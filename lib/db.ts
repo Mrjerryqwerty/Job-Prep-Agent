@@ -8,13 +8,24 @@ export function db() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-export async function latestResume() {
+export type ResumeRow = {
+  id: string;
+  candidate_id: string;
+  resume_text: string;
+  profile: any;
+  file_path: string | null;
+  file_name: string | null;
+  created_at: string;
+};
+
+export async function latestResume(candidate: string) {
   const { data, error } = await db()
     .from("resumes")
     .select("*")
+    .eq("candidate_id", candidate)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  return data as { id: string; resume_text: string; profile: any; created_at: string } | null;
+  return data as ResumeRow | null;
 }

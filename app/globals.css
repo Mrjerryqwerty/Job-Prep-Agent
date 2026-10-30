@@ -61,3 +61,9 @@ textarea, input[type="password"], input[type="text"] {
   border-radius: 10px;
   padding: 0.65rem 0.8rem;
 }
+
+@media print {
+  .no-print, nav, header { display: none !important; }
+  :root { --bg: #fff; --card: #fff; --ink: #000; --muted: #555; --line: #ccc; }
+  .card { break-inside: avoid; }
+}

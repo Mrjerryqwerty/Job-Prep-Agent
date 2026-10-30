@@ -1,18 +1,29 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { CURRICULUM } from "@/lib/content";
 import { db, latestResume } from "@/lib/db";
+import { candidateId } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
+  let cid: string;
+  try { cid = await candidateId(); } catch { redirect("/login"); }
+
   let resume = null as Awaited<ReturnType<typeof latestResume>>;
+  let name = "";
   const done = new Map<number, number>();
   let setupError = "";
   try {
-    resume = await latestResume();
     const sb = db();
-    const { data: a } = await sb.from("assignments").select("id,day");
-    const { data: s } = await sb.from("submissions").select("assignment_id");
+    resume = await latestResume(cid);
+    const { data: c } = await sb.from("candidates").select("name").eq("id", cid).maybeSingle();
+    name = c?.name ?? "";
+    const { data: a } = await sb.from("assignments").select("id,day").eq("candidate_id", cid);
+    const ids = (a ?? []).map((x) => x.id);
+    const { data: s } = ids.length
+      ? await sb.from("submissions").select("assignment_id").in("assignment_id", ids)
+      : { data: [] as { assignment_id: string }[] };
     const submitted = new Set((s ?? []).map((x) => x.assignment_id));
     for (const row of a ?? []) if (submitted.has(row.id)) done.set(row.day, (done.get(row.day) ?? 0) + 1);
   } catch (e: any) {
@@ -24,7 +35,7 @@ export default async function Home() {
       <section>
         <h1 className="text-2xl font-bold">Business Process Analyst, Dassault Systèmes Pune</h1>
         <p className="muted mt-1">
-          PeopleSoft OTC, P2P, ESA and Travel &amp; Expense. Every question is built from Dassault context + the JD + your resume.
+          {name ? `Welcome, ${name}. ` : ""}PeopleSoft OTC, P2P, ESA and Travel &amp; Expense. Every question is built from Dassault context + the JD + your resume.
         </p>
       </section>
 

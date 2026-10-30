@@ -16,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/" className="font-bold">Dassault Prep</Link>
             <Link href="/resume" className="muted hover:underline">Resume &amp; fit</Link>
             <Link href="/interview" className="muted hover:underline">Voice interview</Link>
+            <Link href="/admin" className="muted ml-auto text-xs hover:underline">Admin</Link>
           </nav>
         </header>
         <main className="mx-auto max-w-4xl px-4 py-6">{children}</main>

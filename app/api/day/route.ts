@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { askJson, buildContext } from "@/lib/ai";
 import { CURRICULUM } from "@/lib/content";
 import { db, latestResume } from "@/lib/db";
+import { candidateId, fail } from "@/lib/session";
 
 export const maxDuration = 120;
 
@@ -14,14 +15,15 @@ Return JSON: {"assignments":[{"title":string,"prompt":string},{"title":string,"p
 // Returns (and lazily generates + stores) the two assignments for a day, with latest submissions.
 export async function POST(req: Request) {
   try {
+    const cid = await candidateId();
     const { day } = await req.json();
     const d = CURRICULUM.find((x) => x.n === Number(day));
     if (!d) return NextResponse.json({ error: "Bad day" }, { status: 400 });
 
     const sb = db();
-    let { data: rows } = await sb.from("assignments").select("*").eq("day", d.n).order("slot");
+    let { data: rows } = await sb.from("assignments").select("*").eq("candidate_id", cid).eq("day", d.n).order("slot");
     if (!rows || rows.length < 2) {
-      const resume = await latestResume();
+      const resume = await latestResume(cid);
       if (!resume) return NextResponse.json({ error: "no_resume" }, { status: 409 });
       const seeds = d.slots.map((s, i) => `${i + 1}. [${s.type}] ${s.title}: ${s.seed}`).join("\n");
       const out = await askJson<{ assignments: { title: string; prompt: string }[] }>(
@@ -30,15 +32,18 @@ export async function POST(req: Request) {
         3500,
       );
       const ins = d.slots.map((s, i) => ({
+        candidate_id: cid,
         day: d.n,
         slot: i + 1,
         type: s.type,
         title: out.assignments[i]?.title ?? s.title,
         prompt: out.assignments[i]?.prompt ?? s.seed,
       }));
-      const { error } = await sb.from("assignments").upsert(ins, { onConflict: "day,slot", ignoreDuplicates: true });
+      const { error } = await sb
+        .from("assignments")
+        .upsert(ins, { onConflict: "candidate_id,day,slot", ignoreDuplicates: true });
       if (error) throw error;
-      ({ data: rows } = await sb.from("assignments").select("*").eq("day", d.n).order("slot"));
+      ({ data: rows } = await sb.from("assignments").select("*").eq("candidate_id", cid).eq("day", d.n).order("slot"));
     }
     const ids = (rows ?? []).map((r) => r.id);
     const { data: subs } = await sb
@@ -47,7 +52,7 @@ export async function POST(req: Request) {
       .in("assignment_id", ids)
       .order("created_at", { ascending: false });
     return NextResponse.json({ assignments: rows, submissions: subs ?? [] });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message ?? "Failed" }, { status: 500 });
+  } catch (e) {
+    return fail(e);
   }
 }

@@ -6,6 +6,7 @@ import { useSpeech } from "@/lib/useSpeech";
 type Evalu = { score: number; feedback: string; strengths: string[]; improvements: string[]; sample_answer: string };
 type Summary = { overall_score: number; verdict: string; strengths: string[]; weaknesses: string[]; next_steps: string[] };
 type Phase = "idle" | "asking" | "listening" | "grading" | "feedback" | "done";
+type Rec = { rec: MediaRecorder; stream: MediaStream; chunks: Blob[] };
 
 export default function Room({ round, name }: { round: number; name: string }) {
   const sp = useSpeech();
@@ -20,13 +21,54 @@ export default function Room({ round, name }: { round: number; name: string }) {
   const [err, setErr] = useState("");
   const [spoken, setSpoken] = useState(true);
   const next = useRef<{ q: string; idx: number } | null>(null);
+  const media = useRef<Rec | null>(null);
 
   useEffect(() => { if (phase === "listening") setAnswer(sp.transcript); }, [sp.transcript, phase]);
+  useEffect(() => () => { stopRec(); }, []);
+
+  // Records the raw audio of each answer so the admin can play it back. Best-effort: failures are silent.
+  async function startRec() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "";
+      const rec = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), audioBitsPerSecond: 32000 });
+      const chunks: Blob[] = [];
+      rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      rec.start(1000);
+      media.current = { rec, stream, chunks };
+    } catch {}
+  }
+
+  function stopRec(): Promise<Blob | null> {
+    const m = media.current;
+    media.current = null;
+    if (!m) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const finish = () => {
+        m.stream.getTracks().forEach((t) => t.stop());
+        resolve(m.chunks.length ? new Blob(m.chunks, { type: m.rec.mimeType || "audio/webm" }) : null);
+      };
+      if (m.rec.state === "inactive") return finish();
+      m.rec.onstop = finish;
+      try { m.rec.stop(); } catch { finish(); }
+    });
+  }
+
+  async function uploadAudio(interviewId: string, i: number, blob: Blob) {
+    try {
+      const fd = new FormData();
+      fd.set("interviewId", interviewId);
+      fd.set("idx", String(i));
+      fd.set("audio", blob, `answer-${i}.webm`);
+      await fetch("/api/interview/audio", { method: "POST", body: fd });
+    } catch {}
+  }
 
   async function ask(question: string, i: number) {
     setQ(question); setIdx(i); setEv(null); setAnswer(""); setPhase("asking");
     if (spoken) await sp.speak(question);
     setPhase("listening");
+    startRec();
     if (sp.supported) sp.start();
   }
 
@@ -49,13 +91,16 @@ export default function Room({ round, name }: { round: number; name: string }) {
 
   async function submit(skip = false) {
     sp.stop(); sp.cancelSpeech(); setPhase("grading"); setErr("");
+    const answeredIdx = idx;
+    const blob = await stopRec();
+    if (blob && !skip) uploadAudio(id, answeredIdx, blob); // runs in parallel with grading
     try {
       const d = await call({ action: "answer", interviewId: id, answer: skip ? "" : answer });
       setEv(d.evaluation);
       if (d.done) setSummary(d.summary); else next.current = { q: d.question, idx: d.idx };
       setPhase("feedback");
       if (spoken) await sp.speak(d.evaluation.feedback);
-    } catch (e: any) { setErr(e.message); setPhase("listening"); }
+    } catch (e: any) { setErr(e.message); setPhase("listening"); startRec(); }
   }
 
   function proceed() {
@@ -75,6 +120,7 @@ export default function Room({ round, name }: { round: number; name: string }) {
       {phase === "idle" && (
         <div className="card space-y-3">
           <p className="text-sm">Questions are built from Dassault context, the JD and your resume. Speak naturally and click <b>Done answering</b> when finished.</p>
+          <p className="muted text-xs">Each answer is saved as text and as an audio recording, and the admin can view and play them back.</p>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={spoken} onChange={(e) => setSpoken(e.target.checked)} /> Interviewer speaks aloud</label>
           <button className="btn" onClick={start}>Start interview</button>
         </div>
