@@ -18,11 +18,13 @@ export type ResumeRow = {
   created_at: string;
 };
 
-export async function latestResume(candidate: string) {
+// The one fixed resume (candidate_id is null) that every question and assignment is built from.
+// It is seeded into Supabase by hand and never uploaded through the app.
+export async function referenceResume() {
   const { data, error } = await db()
     .from("resumes")
     .select("*")
-    .eq("candidate_id", candidate)
+    .is("candidate_id", null)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();

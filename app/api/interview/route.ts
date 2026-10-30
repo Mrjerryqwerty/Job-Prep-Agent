@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { askJson, buildContext } from "@/lib/ai";
 import { ROUNDS, type RoundNo } from "@/lib/content";
-import { db, latestResume } from "@/lib/db";
+import { db, referenceResume } from "@/lib/db";
 import { candidateId, fail } from "@/lib/session";
 
 export const maxDuration = 120;
@@ -22,8 +22,8 @@ export async function POST(req: Request) {
     if (body.action === "start") {
       const round = Number(body.round) as RoundNo;
       if (!ROUNDS[round]) return NextResponse.json({ error: "Bad round" }, { status: 400 });
-      const resume = await latestResume(cid);
-      if (!resume) return NextResponse.json({ error: "no_resume" }, { status: 409 });
+      const resume = await referenceResume();
+      if (!resume) return NextResponse.json({ error: "The reference resume is missing from the database" }, { status: 500 });
       const out = await askJson<{ question: string }>(
         system(round),
         `${buildContext(resume.profile)}\n\nGreet the candidate briefly in one sentence and ask question 1 of ${ROUNDS[round].questions}. Return {"question": "..."} (greeting included in the same string).`,
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
         .order("idx");
       const cur = turns![turns!.length - 1];
       const isLast = cur.idx >= iv.total;
-      const resume = await latestResume(cid);
+      const resume = await referenceResume();
 
       const history = turns!
         .slice(0, -1)

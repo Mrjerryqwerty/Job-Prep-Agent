@@ -27,7 +27,8 @@ export async function loadSummaries() {
   const sb = db();
   const [c, r, a, s, i] = await Promise.all([
     sb.from("candidates").select("*").order("last_seen", { ascending: false }),
-    sb.from("resumes").select("id,candidate_id,file_name,file_path,profile,created_at").order("created_at", { ascending: false }),
+    // One fixed reference resume (candidate_id is null) is used for everyone.
+    sb.from("resumes").select("id,candidate_id,file_name,file_path,profile,created_at").is("candidate_id", null).order("created_at", { ascending: false }).limit(1),
     sb.from("assignments").select("id,candidate_id"),
     sb.from("submissions").select("assignment_id,score,created_at").order("created_at", { ascending: false }),
     sb.from("interviews").select("candidate_id,round,status,overall_score,created_at").order("created_at", { ascending: false }),
@@ -35,7 +36,7 @@ export async function loadSummaries() {
   for (const x of [c, r, a, s, i]) if (x.error) throw x.error;
 
   return (c.data as Candidate[]).map((cand) => {
-    const resumes = (r.data ?? []).filter((x) => x.candidate_id === cand.id);
+    const resumes = r.data ?? [];
     const resume = resumes[0] ?? null;
     const aIds = (a.data ?? []).filter((x) => x.candidate_id === cand.id).map((x) => x.id);
     const ivs = (i.data ?? []).filter((x) => x.candidate_id === cand.id) as IvRow[];
@@ -55,7 +56,7 @@ export async function loadCandidate(id: string) {
   if (!cand) return null;
 
   const [r, a, iv, rep] = await Promise.all([
-    sb.from("resumes").select("*").eq("candidate_id", id).order("created_at", { ascending: false }),
+    sb.from("resumes").select("*").is("candidate_id", null).order("created_at", { ascending: false }).limit(1),
     sb.from("assignments").select("*").eq("candidate_id", id).order("day").order("slot"),
     sb.from("interviews").select("*").eq("candidate_id", id).order("created_at", { ascending: false }),
     sb.from("reports").select("*").eq("candidate_id", id).order("created_at", { ascending: false }).limit(1),

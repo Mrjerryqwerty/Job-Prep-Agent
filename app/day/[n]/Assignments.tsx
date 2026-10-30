@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSpeech } from "@/lib/useSpeech";
 
@@ -64,20 +63,17 @@ export default function Assignments({ day }: { day: number }) {
   const [items, setItems] = useState<A[] | null>(null);
   const [subs, setSubs] = useState<S[]>([]);
   const [err, setErr] = useState("");
-  const [noResume, setNoResume] = useState(false);
 
   useEffect(() => {
     fetch("/api/day", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ day }) })
       .then(async (r) => ({ r, d: await r.json() }))
       .then(({ r, d }) => {
-        if (r.status === 409) return setNoResume(true);
         if (!r.ok) return setErr(d.error ?? "Failed");
         setItems(d.assignments); setSubs(d.submissions);
       })
       .catch((e) => setErr(String(e)));
   }, [day]);
 
-  if (noResume) return <div className="card">Upload your resume first so today&apos;s assignments can be built around it. <Link href="/resume" className="btn ml-2 inline-block">Upload</Link></div>;
   if (err) return <div className="card" style={{ color: "var(--warn)" }}>{err}</div>;
   if (!items) return <div className="card muted">Building today&apos;s two assignments from the JD, Dassault context and your resume…</div>;
   return (

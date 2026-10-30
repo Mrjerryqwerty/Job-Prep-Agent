@@ -75,7 +75,7 @@ export default function Room({ round, name }: { round: number; name: string }) {
   async function call(body: object) {
     const r = await fetch("/api/interview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error === "no_resume" ? "Upload your resume first (Resume & fit)." : d.error ?? "Failed");
+    if (!r.ok) throw new Error(d.error ?? "Failed");
     return d;
   }
 

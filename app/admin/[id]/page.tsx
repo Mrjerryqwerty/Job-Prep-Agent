@@ -82,8 +82,8 @@ export default async function CandidateReport({ params }: { params: Promise<{ id
       )}
 
       <section className="card space-y-3 text-sm">
-        <p className="text-lg font-semibold">Resume</p>
-        {resumes.length === 0 && <p className="muted">No resume uploaded.</p>}
+        <p className="text-lg font-semibold">Reference resume <span className="muted text-xs font-normal">(fixed; all questions are built from it)</span></p>
+        {resumes.length === 0 && <p className="muted">No reference resume is stored.</p>}
         {resumes.map((x: any, i: number) => (
           <div key={x.id} className="flex flex-wrap items-center justify-between gap-2">
             <span>

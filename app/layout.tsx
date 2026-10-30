@@ -14,7 +14,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="border-b" style={{ borderColor: "var(--line)" }}>
           <nav className="mx-auto flex max-w-4xl items-center gap-5 px-4 py-3 text-sm">
             <Link href="/" className="font-bold">Dassault Prep</Link>
-            <Link href="/resume" className="muted hover:underline">Resume &amp; fit</Link>
             <Link href="/interview" className="muted hover:underline">Voice interview</Link>
             <Link href="/admin" className="muted ml-auto text-xs hover:underline">Admin</Link>
           </nav>

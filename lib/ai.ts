@@ -102,8 +102,8 @@ export async function askJson<T>(system: string, input: string, maxTokens = 2000
 
 // The merge the app is built around: Dassault + JD + resume profile in one context block.
 export function buildContext(profile: unknown | null) {
-  return `=== DASSAULT SYSTEMES ===\n${DASSAULT}\n\n=== JOB DESCRIPTION ===\n${JD}\n\n=== CANDIDATE (parsed from resume) ===\n${
-    profile ? JSON.stringify(profile, null, 1) : "No resume uploaded yet."
+  return `=== DASSAULT SYSTEMES ===\n${DASSAULT}\n\n=== JOB DESCRIPTION ===\n${JD}\n\n=== CANDIDATE (fixed reference resume; ask only about what it shows, do not ask the candidate to supply or upload a resume) ===\n${
+    profile ? JSON.stringify(profile, null, 1) : "No reference resume available."
   }`;
 }
 

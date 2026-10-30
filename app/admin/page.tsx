@@ -35,23 +35,14 @@ export default async function AdminHome() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ candidate: c, resume, resumeCount, readiness: r }) => (
+              {rows.map(({ candidate: c, resume, readiness: r }) => (
                 <tr key={c.id} className="border-t" style={{ borderColor: "var(--line)" }}>
                   <td className="p-3">
                     <Link href={`/admin/${c.id}`} className="font-semibold hover:underline">{c.name}</Link>
                     <div className="muted text-xs">{c.email}</div>
                   </td>
                   <td className="p-3">
-                    {resume ? (
-                      <>
-                        <div>{resume.file_name ?? "Pasted text"}</div>
-                        <div className="muted text-xs">
-                          fit {r.fit ?? "-"}/100 · {resumeCount} upload{resumeCount > 1 ? "s" : ""}
-                        </div>
-                      </>
-                    ) : (
-                      <span className="muted">none</span>
-                    )}
+                    <div>{resume?.file_name ?? "Reference resume"}</div><div className="muted text-xs">fit {r.fit ?? "-"}/100 (same for everyone)</div>
                   </td>
                   <td className="p-3">
                     {r.assignmentsDone}/{TOTAL_ASSIGNMENTS}

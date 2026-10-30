@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { askJson, buildContext } from "@/lib/ai";
 import { CURRICULUM } from "@/lib/content";
-import { db, latestResume } from "@/lib/db";
+import { db, referenceResume } from "@/lib/db";
 import { candidateId, fail } from "@/lib/session";
 
 export const maxDuration = 120;
@@ -23,8 +23,8 @@ export async function POST(req: Request) {
     const sb = db();
     let { data: rows } = await sb.from("assignments").select("*").eq("candidate_id", cid).eq("day", d.n).order("slot");
     if (!rows || rows.length < 2) {
-      const resume = await latestResume(cid);
-      if (!resume) return NextResponse.json({ error: "no_resume" }, { status: 409 });
+      const resume = await referenceResume();
+      if (!resume) return NextResponse.json({ error: "The reference resume is missing from the database" }, { status: 500 });
       const seeds = d.slots.map((s, i) => `${i + 1}. [${s.type}] ${s.title}: ${s.seed}`).join("\n");
       const out = await askJson<{ assignments: { title: string; prompt: string }[] }>(
         SYSTEM,

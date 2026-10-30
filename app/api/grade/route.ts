@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { askJson, buildContext } from "@/lib/ai";
-import { db, latestResume } from "@/lib/db";
+import { db, referenceResume } from "@/lib/db";
 import { candidateId, fail } from "@/lib/session";
 
 export const maxDuration = 120;
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
       .eq("candidate_id", cid)
       .maybeSingle();
     if (!a) return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
-    const resume = await latestResume(cid);
+    const resume = await referenceResume();
     const fb = await askJson<{ score: number }>(
       SYSTEM,
       `${buildContext(resume?.profile ?? null)}\n\nASSIGNMENT: ${a.title}\n${a.prompt}\n\nCANDIDATE ANSWER:\n${answer}`,

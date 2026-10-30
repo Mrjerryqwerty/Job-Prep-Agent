@@ -1,22 +1,32 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CURRICULUM } from "@/lib/content";
-import { db, latestResume } from "@/lib/db";
+import { db, referenceResume } from "@/lib/db";
 import { candidateId } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
+
+function List({ title, items, tone }: { title: string; items?: string[]; tone?: string }) {
+  if (!items?.length) return null;
+  return (
+    <div>
+      <p className="font-semibold" style={{ color: tone }}>{title}</p>
+      <ul className="mt-1 list-disc space-y-1 pl-5">{items.map((x, i) => <li key={i}>{x}</li>)}</ul>
+    </div>
+  );
+}
 
 export default async function Home() {
   let cid: string;
   try { cid = await candidateId(); } catch { redirect("/login"); }
 
-  let resume = null as Awaited<ReturnType<typeof latestResume>>;
+  let profile: any = null;
   let name = "";
   const done = new Map<number, number>();
   let setupError = "";
   try {
     const sb = db();
-    resume = await latestResume(cid);
+    profile = (await referenceResume())?.profile ?? null;
     const { data: c } = await sb.from("candidates").select("name").eq("id", cid).maybeSingle();
     name = c?.name ?? "";
     const { data: a } = await sb.from("assignments").select("id,day").eq("candidate_id", cid);
@@ -35,7 +45,7 @@ export default async function Home() {
       <section>
         <h1 className="text-2xl font-bold">Business Process Analyst, Dassault Systèmes Pune</h1>
         <p className="muted mt-1">
-          {name ? `Welcome, ${name}. ` : ""}PeopleSoft OTC, P2P, ESA and Travel &amp; Expense. Every question is built from Dassault context + the JD + your resume.
+          {name ? `Welcome, ${name}. ` : ""}PeopleSoft OTC, P2P, ESA and Travel &amp; Expense. Every question is built from Dassault context + the JD + the reference resume.
         </p>
       </section>
 
@@ -45,12 +55,18 @@ export default async function Home() {
         </div>
       )}
 
-      {!resume && !setupError && (
-        <div className="card">
-          <p className="font-semibold">Step 1: upload your resume</p>
-          <p className="muted text-sm">Assignments and interview questions are generated from it, so this comes first.</p>
-          <Link href="/resume" className="btn mt-3 inline-block">Upload resume</Link>
-        </div>
+      {profile && (
+        <details className="card text-sm">
+          <summary className="cursor-pointer font-semibold">
+            Reference resume: {profile.name} · fit with the JD {profile.fit_score}/100
+          </summary>
+          <div className="mt-3 space-y-3">
+            <p className="muted">{profile.headline}</p>
+            <List title="Strengths for this role" items={profile.strengths_for_role} tone="var(--good)" />
+            <List title="Gaps versus the JD (expect these to be probed)" items={profile.gaps_vs_jd} tone="var(--warn)" />
+            <List title="Resume items the interviewers will dig into" items={profile.story_hooks} />
+          </div>
+        </details>
       )}
 
       <section className="grid gap-3 sm:grid-cols-2">
